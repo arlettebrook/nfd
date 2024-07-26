@@ -110,14 +110,14 @@ async function onMessage (message) {
         text:'使用方法，回复转发的消息，并发送回复消息，或者`/block`、`/unblock`、`/checkblock`等指令'
       })
     }
-    if(/^\/block$/.exec(message.text)){
-      return handleBlock(message)
+    if (message.text === '/block') {
+      return handleBlock(message);
     }
-    if(/^\/unblock$/.exec(message.text)){
-      return handleUnBlock(message)
+    if (message.text === '/unblock') {
+      return handleUnBlock(message);
     }
-    if(/^\/checkblock$/.exec(message.text)){
-      return checkBlock(message)
+    if (message.text === '/checkblock') {
+      return checkBlock(message);
     }
     let guestChantId = await nfd.get('msg-map-' + message?.reply_to_message.message_id,
                                       { type: "json" })
