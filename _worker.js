@@ -51,18 +51,21 @@ function forwardMessage(msg){
 /**
  * Wait for requests to the worker
  */
-addEventListener('fetch', event => {
-  const url = new URL(event.request.url)
-  if (url.pathname === WEBHOOK) {
-    event.respondWith(handleWebhook(event))
-  } else if (url.pathname === '/registerWebhook') {
-    event.respondWith(registerWebhook(event, url, WEBHOOK, SECRET))
-  } else if (url.pathname === '/unRegisterWebhook') {
-    event.respondWith(unRegisterWebhook(event))
-  } else {
-    event.respondWith(new Response('No handler for this request'))
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url)
+
+    if (url.pathname === env.WEBHOOK) {
+      return handleWebhook(request, env)
+    } else if (url.pathname === '/registerWebhook') {
+      return registerWebhook(request, env)
+    } else if (url.pathname === '/unRegisterWebhook') {
+      return unRegisterWebhook(request, env)
+    } else {
+      return new Response('No handler for this request')
+    }
   }
-})
+}
 
 /**
  * Handle requests to WEBHOOK
