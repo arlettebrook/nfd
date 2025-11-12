@@ -73,10 +73,50 @@ async function onUpdate(env, update) {
 async function onMessage(env, message) {
   const ADMIN_UID = env.ADMIN_UID;
   const chatId = message.chat.id.toString();
+  const nfd = env.nfd;
 
+  // 人机验证
   if (message.text === "/start") {
-    const startMsg = await fetch(env.START_MSG_URL).then((r) => r.text());
-    return sendMessage(env, { chat_id: chatId, text: startMsg });
+    const verified = await nfd.get(`verified-${chatId}`, { type: "json" });
+    if (verified) {
+      const startMsg = await fetch(env.START_MSG_URL).then((r) => r.text());
+      return sendMessage(env, { chat_id: chatId, text: startMsg });
+    }
+
+    // 生成验证码
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    await nfd.put(`captcha-${chatId}`, code, { expirationTtl: 300 }); // 5分钟有效
+    await sendMessage(env, {
+      chat_id: chatId,
+      text: `🤖 为确保你不是机器人，请输入以下验证码完成验证：\n\n👉 <b>${code}</b>\n\n(5分钟内有效)`,
+      parse_mode: "HTML",
+    });
+    return;
+  }
+
+  // 检查验证码输入
+  const captcha = await nfd.get(`captcha-${chatId}`, { type: "text" });
+  if (captcha && message.text?.trim()?.toUpperCase() === captcha) {
+    await nfd.put(`verified-${chatId}`, true, { expirationTtl: 86400 }); // 24小时有效
+    await nfd.delete(`captcha-${chatId}`);
+    return sendMessage(env, {
+      chat_id: chatId,
+      text: "✅ 验证成功！你现在可以与机器人互动了。",
+    });
+  } else if (captcha) {
+    return sendMessage(env, {
+      chat_id: chatId,
+      text: "❌ 验证码错误，请重新输入。",
+    });
+  }
+
+  // 若用户未验证，拒绝访问
+  const verified = await nfd.get(`verified-${chatId}`, { type: "json" });
+  if (!verified) {
+    return sendMessage(env, {
+      chat_id: chatId,
+      text: "请先输入 /start 并通过人机验证。",
+    });
   }
 
   // 管理员逻辑
@@ -84,7 +124,7 @@ async function onMessage(env, message) {
     return handleAdminMessage(env, message);
   }
 
-  // 普通用户
+  // 普通用户逻辑
   return handleGuestMessage(env, message);
 }
 
@@ -94,16 +134,16 @@ async function handleAdminMessage(env, message) {
   const ADMIN_UID = env.ADMIN_UID;
   const nfd = env.nfd;
 
+  if (message.text === "/block") return handleBlock(env, message);
+  if (message.text === "/unblock") return handleUnBlock(env, message);
+  if (message.text === "/checkblock") return checkBlock(env, message);
+
   if (!message?.reply_to_message?.chat) {
     return sendMessage(env, {
       chat_id: ADMIN_UID,
       text: "使用方法：回复转发的消息，并发送回复消息，或使用 /block /unblock /checkblock",
     });
   }
-
-  if (message.text === "/block") return handleBlock(env, message);
-  if (message.text === "/unblock") return handleUnBlock(env, message);
-  if (message.text === "/checkblock") return checkBlock(env, message);
 
   const guestChatId = await nfd.get(
     "msg-map-" + message.reply_to_message.message_id,
@@ -163,7 +203,9 @@ async function handleNotify(env, message) {
 
     if (!lastMsgTime || now - lastMsgTime > interval) {
       await nfd.put("lastmsg-" + chatId, now);
-      const notifyText = await fetch(env.NOTIFICATION_URL).then((r) => r.text());
+      const notifyText = await fetch(env.NOTIFICATION_URL).then((r) =>
+        r.text()
+      );
       return sendMessage(env, { chat_id: ADMIN_UID, text: notifyText });
     }
   }
