@@ -1,3 +1,4 @@
+// @ts-nocheck
 const TOKEN = ENV_BOT_TOKEN // Get it from @BotFather
 const WEBHOOK = '/endpoint'
 const SECRET = ENV_BOT_SECRET // A-Z, a-z, 0-9, _ and -
@@ -8,7 +9,7 @@ const fraudDb = 'https://raw.githubusercontent.com/LloydAsp/nfd/main/data/fraud.
 const notificationUrl = 'https://raw.githubusercontent.com/arlettebrook/arlettebrook/main/nfd/notification.txt'
 const startMsgUrl = 'https://raw.githubusercontent.com/arlettebrook/arlettebrook/main/nfd/startMessage.md';
 
-const enable_notification = true
+const enable_notification = false
 /**
  * Return url to telegram api, optionally with parameters added
  */
