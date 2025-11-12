@@ -1,261 +1,254 @@
 // @ts-nocheck
-const TOKEN = ENV_BOT_TOKEN // Get it from @BotFather
-const WEBHOOK = '/endpoint'
-const SECRET = ENV_BOT_SECRET // A-Z, a-z, 0-9, _ and -
-const ADMIN_UID = ENV_ADMIN_UID // your user id, get it from https://t.me/username_to_id_bot
-
-const NOTIFY_INTERVAL = 3600 * 1000;
-const fraudDb = 'https://raw.githubusercontent.com/LloydAsp/nfd/main/data/fraud.db';
-const notificationUrl = 'https://raw.githubusercontent.com/arlettebrook/arlettebrook/main/nfd/notification.txt';
-const startMsgUrl = 'https://raw.githubusercontent.com/arlettebrook/arlettebrook/main/nfd/startMessage.md';
-
-const enable_notification = false
-/**
- * Return url to telegram api, optionally with parameters added
- */
-function apiUrl (methodName, params = null) {
-  let query = ''
-  if (params) {
-    query = '?' + new URLSearchParams(params).toString()
-  }
-  return `https://api.telegram.org/bot${TOKEN}/${methodName}${query}`
-}
-
-function requestTelegram(methodName, body, params = null){
-  return fetch(apiUrl(methodName, params), body)
-    .then(r => r.json())
-}
-
-function makeReqBody(body){
-  return {
-    method:'POST',
-    headers:{
-      'content-type':'application/json'
-    },
-    body:JSON.stringify(body)
-  }
-}
-
-function sendMessage(msg = {}){
-  return requestTelegram('sendMessage', makeReqBody(msg))
-}
-
-function copyMessage(msg = {}){
-  return requestTelegram('copyMessage', makeReqBody(msg))
-}
-
-function forwardMessage(msg){
-  return requestTelegram('forwardMessage', makeReqBody(msg))
-}
-
-/**
- * Wait for requests to the worker
- */
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url)
+    const url = new URL(request.url);
 
-    if (url.pathname === env.WEBHOOK) {
-      return handleWebhook(request, env)
-    } else if (url.pathname === '/registerWebhook') {
-      return registerWebhook(request, env)
-    } else if (url.pathname === '/unRegisterWebhook') {
-      return unRegisterWebhook(request, env)
-    } else {
-      return new Response('No handler for this request')
+    // 处理不同路径
+    if (url.pathname === env.WEBHOOK_PATH) {
+      return handleWebhook(request, env, ctx);
+    } else if (url.pathname === "/registerWebhook") {
+      return registerWebhook(request, env);
+    } else if (url.pathname === "/unRegisterWebhook") {
+      return unRegisterWebhook(request, env);
     }
+
+    return new Response("No handler for this request");
+  },
+};
+
+// ==================== Telegram 相关函数 ====================
+
+function apiUrl(env, methodName, params = null) {
+  let query = params ? "?" + new URLSearchParams(params).toString() : "";
+  return `https://api.telegram.org/bot${env.BOT_TOKEN}/${methodName}${query}`;
+}
+
+function makeReqBody(body) {
+  return {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  };
+}
+
+function requestTelegram(env, methodName, body, params = null) {
+  return fetch(apiUrl(env, methodName, params), body).then((r) => r.json());
+}
+
+function sendMessage(env, msg = {}) {
+  return requestTelegram(env, "sendMessage", makeReqBody(msg));
+}
+
+function copyMessage(env, msg = {}) {
+  return requestTelegram(env, "copyMessage", makeReqBody(msg));
+}
+
+function forwardMessage(env, msg) {
+  return requestTelegram(env, "forwardMessage", makeReqBody(msg));
+}
+
+// ==================== Webhook 处理 ====================
+
+async function handleWebhook(request, env, ctx) {
+  // 校验 Secret
+  if (
+    request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.BOT_SECRET
+  ) {
+    return new Response("Unauthorized", { status: 403 });
+  }
+
+  const update = await request.json();
+  ctx.waitUntil(onUpdate(env, update));
+  return new Response("Ok");
+}
+
+async function onUpdate(env, update) {
+  if ("message" in update) {
+    await onMessage(env, update.message);
   }
 }
 
-/**
- * Handle requests to WEBHOOK
- * https://core.telegram.org/bots/api#update
- */
-async function handleWebhook (event) {
-  // Check secret
-  if (event.request.headers.get('X-Telegram-Bot-Api-Secret-Token') !== SECRET) {
-    return new Response('Unauthorized', { status: 403 })
+// ==================== 消息逻辑 ====================
+
+async function onMessage(env, message) {
+  const ADMIN_UID = env.ADMIN_UID;
+  const chatId = message.chat.id.toString();
+
+  if (message.text === "/start") {
+    const startMsg = await fetch(env.START_MSG_URL).then((r) => r.text());
+    return sendMessage(env, { chat_id: chatId, text: startMsg });
   }
 
-  // Read request body synchronously
-  const update = await event.request.json()
-  // Deal with response asynchronously
-  event.waitUntil(onUpdate(update))
+  // 管理员逻辑
+  if (chatId === ADMIN_UID) {
+    return handleAdminMessage(env, message);
+  }
 
-  return new Response('Ok')
+  // 普通用户
+  return handleGuestMessage(env, message);
 }
 
-/**
- * Handle incoming Update
- * https://core.telegram.org/bots/api#update
- */
-async function onUpdate (update) {
-  if ('message' in update) {
-    await onMessage(update.message)
-  }
-}
+// ==================== 管理员逻辑 ====================
 
-/**
- * Handle incoming Message
- * https://core.telegram.org/bots/api#message
- */
-async function onMessage (message) {
-  if(message.text === '/start'){
-    let startMsg = await fetch(startMsgUrl).then(r => r.text())
-    return sendMessage({
-      chat_id:message.chat.id,
-      text:startMsg,
-    })
-  }
-  if(message.chat.id.toString() === ADMIN_UID){
-    if(!message?.reply_to_message?.chat){
-      return sendMessage({
-        chat_id:ADMIN_UID,
-        text:'使用方法，回复转发的消息，并发送回复消息，或者`/block`、`/unblock`、`/checkblock`等指令'
-      })
-    }
-    if (message.text === '/block') {
-      return handleBlock(message);
-    }
-    if (message.text === '/unblock') {
-      return handleUnBlock(message);
-    }
-    if (message.text === '/checkblock') {
-      return checkBlock(message);
-    }
-    let guestChantId = await nfd.get('msg-map-' + message?.reply_to_message.message_id,
-                                      { type: "json" })
-    return copyMessage({
-      chat_id: guestChantId,
-      from_chat_id:message.chat.id,
-      message_id:message.message_id,
-    })
-  }
-  return handleGuestMessage(message)
-}
+async function handleAdminMessage(env, message) {
+  const ADMIN_UID = env.ADMIN_UID;
+  const nfd = env.nfd;
 
-async function handleGuestMessage(message){
-  let chatId = message.chat.id;
-  let isblocked = await nfd.get('isblocked-' + chatId, { type: "json" })
-  
-  if(isblocked){
-    return sendMessage({
-      chat_id: chatId,
-      text:'Your are blocked'
-    })
-  }
-
-  let forwardReq = await forwardMessage({
-    chat_id:ADMIN_UID,
-    from_chat_id:message.chat.id,
-    message_id:message.message_id
-  })
-  console.log(JSON.stringify(forwardReq))
-  if(forwardReq.ok){
-    await nfd.put('msg-map-' + forwardReq.result.message_id, chatId)
-  }
-  return handleNotify(message)
-}
-
-async function handleNotify(message){
-  // 先判断是否是诈骗人员，如果是，则直接提醒
-  // 如果不是，则根据时间间隔提醒：用户id，交易注意点等
-  let chatId = message.chat.id;
-  if(await isFraud(chatId)){
-    return sendMessage({
+  if (!message?.reply_to_message?.chat) {
+    return sendMessage(env, {
       chat_id: ADMIN_UID,
-      text:`检测到骗子，UID${chatId}`
-    })
+      text: "使用方法：回复转发的消息，并发送回复消息，或使用 /block /unblock /checkblock",
+    });
   }
-  if(enable_notification){
-    let lastMsgTime = await nfd.get('lastmsg-' + chatId, { type: "json" })
-    if(!lastMsgTime || Date.now() - lastMsgTime > NOTIFY_INTERVAL){
-      await nfd.put('lastmsg-' + chatId, Date.now())
-      return sendMessage({
-        chat_id: ADMIN_UID,
-        text:await fetch(notificationUrl).then(r => r.text())
-      })
+
+  if (message.text === "/block") return handleBlock(env, message);
+  if (message.text === "/unblock") return handleUnBlock(env, message);
+  if (message.text === "/checkblock") return checkBlock(env, message);
+
+  const guestChatId = await nfd.get(
+    "msg-map-" + message.reply_to_message.message_id,
+    { type: "json" }
+  );
+
+  return copyMessage(env, {
+    chat_id: guestChatId,
+    from_chat_id: message.chat.id,
+    message_id: message.message_id,
+  });
+}
+
+// ==================== 普通用户消息 ====================
+
+async function handleGuestMessage(env, message) {
+  const nfd = env.nfd;
+  const ADMIN_UID = env.ADMIN_UID;
+  const chatId = message.chat.id.toString();
+
+  const isBlocked = await nfd.get("isblocked-" + chatId, { type: "json" });
+  if (isBlocked) {
+    return sendMessage(env, { chat_id: chatId, text: "You are blocked." });
+  }
+
+  const forwardReq = await forwardMessage(env, {
+    chat_id: ADMIN_UID,
+    from_chat_id: message.chat.id,
+    message_id: message.message_id,
+  });
+
+  if (forwardReq.ok) {
+    await nfd.put("msg-map-" + forwardReq.result.message_id, chatId);
+  }
+
+  return handleNotify(env, message);
+}
+
+// ==================== 通知逻辑 ====================
+
+async function handleNotify(env, message) {
+  const nfd = env.nfd;
+  const ADMIN_UID = env.ADMIN_UID;
+  const chatId = message.chat.id.toString();
+
+  if (await isFraud(env, chatId)) {
+    return sendMessage(env, {
+      chat_id: ADMIN_UID,
+      text: `检测到骗子，UID ${chatId}`,
+    });
+  }
+
+  if (env.ENABLE_NOTIFICATION === "true") {
+    const lastMsgTime = await nfd.get("lastmsg-" + chatId, { type: "json" });
+    const now = Date.now();
+    const interval = parseInt(env.NOTIFY_INTERVAL || "3600000", 10);
+
+    if (!lastMsgTime || now - lastMsgTime > interval) {
+      await nfd.put("lastmsg-" + chatId, now);
+      const notifyText = await fetch(env.NOTIFICATION_URL).then((r) => r.text());
+      return sendMessage(env, { chat_id: ADMIN_UID, text: notifyText });
     }
   }
 }
 
-async function handleBlock(message){
-  let guestChantId = await nfd.get('msg-map-' + message.reply_to_message.message_id,
-                                      { type: "json" })
-  if(guestChantId === ADMIN_UID){
-    return sendMessage({
-      chat_id: ADMIN_UID,
-      text:'不能屏蔽自己'
-    })
+// ==================== Block/Unblock ====================
+
+async function handleBlock(env, message) {
+  const ADMIN_UID = env.ADMIN_UID;
+  const nfd = env.nfd;
+
+  const guestChatId = await nfd.get(
+    "msg-map-" + message.reply_to_message.message_id,
+    { type: "json" }
+  );
+
+  if (guestChatId === ADMIN_UID) {
+    return sendMessage(env, { chat_id: ADMIN_UID, text: "不能屏蔽自己" });
   }
-  await nfd.put('isblocked-' + guestChantId, true)
 
-  return sendMessage({
+  await nfd.put("isblocked-" + guestChatId, true);
+  return sendMessage(env, {
     chat_id: ADMIN_UID,
-    text: `UID:${guestChantId}屏蔽成功`,
-  })
+    text: `UID:${guestChatId} 屏蔽成功`,
+  });
 }
 
-async function handleUnBlock(message){
-  let guestChantId = await nfd.get('msg-map-' + message.reply_to_message.message_id,
-  { type: "json" })
+async function handleUnBlock(env, message) {
+  const ADMIN_UID = env.ADMIN_UID;
+  const nfd = env.nfd;
 
-  await nfd.put('isblocked-' + guestChantId, false)
+  const guestChatId = await nfd.get(
+    "msg-map-" + message.reply_to_message.message_id,
+    { type: "json" }
+  );
 
-  return sendMessage({
+  await nfd.put("isblocked-" + guestChatId, false);
+  return sendMessage(env, {
     chat_id: ADMIN_UID,
-    text:`UID:${guestChantId}解除屏蔽成功`,
-  })
+    text: `UID:${guestChatId} 解除屏蔽成功`,
+  });
 }
 
-async function checkBlock(message){
-  let guestChantId = await nfd.get('msg-map-' + message.reply_to_message.message_id,
-  { type: "json" })
-  let blocked = await nfd.get('isblocked-' + guestChantId, { type: "json" })
+async function checkBlock(env, message) {
+  const ADMIN_UID = env.ADMIN_UID;
+  const nfd = env.nfd;
 
-  return sendMessage({
+  const guestChatId = await nfd.get(
+    "msg-map-" + message.reply_to_message.message_id,
+    { type: "json" }
+  );
+  const blocked = await nfd.get("isblocked-" + guestChatId, { type: "json" });
+
+  return sendMessage(env, {
     chat_id: ADMIN_UID,
-    text: `UID:${guestChantId}` + (blocked ? '被屏蔽' : '没有被屏蔽')
-  })
+    text: `UID:${guestChatId}` + (blocked ? " 被屏蔽" : " 没有被屏蔽"),
+  });
 }
 
-/**
- * Send plain text message
- * https://core.telegram.org/bots/api#sendmessage
- */
-async function sendPlainText (chatId, text) {
-  return sendMessage({
-    chat_id: chatId,
-    text
-  })
+// ==================== Webhook 注册 ====================
+
+async function registerWebhook(request, env) {
+  const url = new URL(request.url);
+  const webhookUrl = `${url.protocol}//${url.hostname}${env.WEBHOOK_PATH}`;
+  const r = await fetch(
+    apiUrl(env, "setWebhook", {
+      url: webhookUrl,
+      secret_token: env.BOT_SECRET,
+    })
+  ).then((r) => r.json());
+
+  return new Response(r.ok ? "Ok" : JSON.stringify(r, null, 2));
 }
 
-/**
- * Set webhook to this worker's url
- * https://core.telegram.org/bots/api#setwebhook
- */
-async function registerWebhook (event, requestUrl, suffix, secret) {
-  // https://core.telegram.org/bots/api#setwebhook
-  const webhookUrl = `${requestUrl.protocol}//${requestUrl.hostname}${suffix}`
-  const r = await (await fetch(apiUrl('setWebhook', { url: webhookUrl, secret_token: secret }))).json()
-  return new Response('ok' in r && r.ok ? 'Ok' : JSON.stringify(r, null, 2))
+async function unRegisterWebhook(request, env) {
+  const r = await fetch(apiUrl(env, "setWebhook", { url: "" })).then((r) =>
+    r.json()
+  );
+  return new Response(r.ok ? "Ok" : JSON.stringify(r, null, 2));
 }
 
-/**
- * Remove webhook
- * https://core.telegram.org/bots/api#setwebhook
- */
-async function unRegisterWebhook (event) {
-  const r = await (await fetch(apiUrl('setWebhook', { url: '' }))).json()
-  return new Response('ok' in r && r.ok ? 'Ok' : JSON.stringify(r, null, 2))
-}
+// ==================== 骗子检测 ====================
 
-async function isFraud(id){
-  id = id.toString()
-  let db = await fetch(fraudDb).then(r => r.text())
-  let arr = db.split('\n').filter(v => v)
-  console.log(JSON.stringify(arr))
-  let flag = arr.filter(v => v === id).length !== 0
-  console.log(flag)
-  return flag
+async function isFraud(env, id) {
+  const db = await fetch(env.FRAUD_DB_URL).then((r) => r.text());
+  const arr = db.split("\n").filter(Boolean);
+  return arr.includes(id.toString());
 }
