@@ -256,3 +256,26 @@ async function isFraud(id){
   console.log(flag)
   return flag
 }
+
+
+function makeCaptcha() {
+  const a = Math.floor(Math.random() * 10) + 1;
+  const b = Math.floor(Math.random() * 10) + 1;
+  const op = Math.random() > 0.5 ? '+' : '-';
+  const ans = op === '+' ? a + b : a - b;
+  const text = `${a} ${op} ${b} = ?`;
+
+  // 生成两个干扰选项
+  const wrongs = new Set();
+  while (wrongs.size < 2) {
+    const delta = Math.floor(Math.random() * 5) - 2;
+    const cand = ans + delta;
+    if (cand !== ans) wrongs.add(cand);
+  }
+  const options = [...wrongs, ans].sort(() => Math.random() - 0.5);
+  return { text, ans, options };
+}
+
+async function isVerified(chatId) {
+  return await nfd.get('verified-' + chatId, { type: "json" });
+}
