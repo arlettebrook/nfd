@@ -50,7 +50,6 @@ function forwardMessage(env, msg) {
 // ==================== Webhook 处理 ====================
 
 async function handleWebhook(request, env, ctx) {
-  // 校验 Secret
   if (
     request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.BOT_SECRET
   ) {
@@ -75,7 +74,24 @@ async function onMessage(env, message) {
   const chatId = message.chat.id.toString();
   const nfd = env.nfd;
 
-  // 人机验证
+  // 管理员跳过人机验证
+  if (chatId === ADMIN_UID) {
+    if (message.text === "/start") {
+      const helpMsg = `
+🤖 <b>管理员命令说明</b>
+/block - 屏蔽回复的用户
+/unblock - 解除屏蔽
+/checkblock - 查询屏蔽状态
+
+直接回复用户转发的消息，即可向该用户发送信息以及使用管理员命令。
+`;
+      return sendMessage(env, { chat_id: chatId, text: helpMsg, parse_mode: "HTML" });
+    }
+    // 管理员其他逻辑
+    return handleAdminMessage(env, message);
+  }
+
+  // 普通用户 /start 验证逻辑
   if (message.text === "/start") {
     const verified = await nfd.get(`verified-${chatId}`, { type: "json" });
     if (verified) {
@@ -110,18 +126,13 @@ async function onMessage(env, message) {
     });
   }
 
-  // 若用户未验证，拒绝访问
+  // 未验证用户拒绝访问
   const verified = await nfd.get(`verified-${chatId}`, { type: "json" });
   if (!verified) {
     return sendMessage(env, {
       chat_id: chatId,
       text: "请先输入 /start 并通过人机验证。",
     });
-  }
-
-  // 管理员逻辑
-  if (chatId === ADMIN_UID) {
-    return handleAdminMessage(env, message);
   }
 
   // 普通用户逻辑
