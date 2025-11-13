@@ -11,7 +11,8 @@ No Fraud / Node Forward Bot
     - 稳定，全球cdn转发
 - 接入反欺诈系统，当聊天对象有诈骗历史时，自动发出提醒
 - 支持屏蔽用户，避免被骚扰
-- 新增人机验证
+- **新增人机验证**
+- **支持workers连接GitHub部署**（推荐）
 
 ## 搭建方法
 1. 从[@BotFather](https://t.me/BotFather)获取token，并且可以发送`/setjoingroups`来禁止此Bot被添加到群组
