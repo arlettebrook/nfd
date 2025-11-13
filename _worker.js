@@ -1,10 +1,20 @@
 // @ts-nocheck
+
+// ==================== 全局配置 ====================
+const WEBHOOK_PATH = "/endpoint";
+const FRAUD_DB_URL = "https://raw.githubusercontent.com/LloydAsp/nfd/main/data/fraud.db";
+const NOTIFICATION_URL = "https://raw.githubusercontent.com/arlettebrook/arlettebrook/main/nfd/notification.txt";
+const START_MSG_URL = "https://raw.githubusercontent.com/arlettebrook/arlettebrook/main/nfd/startMessage.md";
+const ENABLE_NOTIFICATION = "false";
+const NOTIFY_INTERVAL = "3600000";
+
+// ==================== 主体逻辑 ====================
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // 处理不同路径
-    if (url.pathname === env.WEBHOOK_PATH) {
+    if (url.pathname === WEBHOOK_PATH) {
       return handleWebhook(request, env, ctx);
     } else if (url.pathname === "/registerWebhook") {
       return registerWebhook(request, env);
@@ -83,7 +93,7 @@ async function onMessage(env, message) {
 /unblock - 解除屏蔽
 /checkblock - 查询屏蔽状态
 
-直接回复用户转发的消息，即可向该用户发送信息以及使用管理员命令。
+直接回复用户转发的消息，即可向该用户发送信息。
 `;
       return sendMessage(env, { chat_id: chatId, text: helpMsg, parse_mode: "HTML" });
     }
@@ -95,7 +105,7 @@ async function onMessage(env, message) {
   if (message.text === "/start") {
     const verified = await nfd.get(`verified-${chatId}`, { type: "json" });
     if (verified) {
-      const startMsg = await fetch(env.START_MSG_URL).then((r) => r.text());
+      const startMsg = await fetch(START_MSG_URL).then((r) => r.text());
       return sendMessage(env, { chat_id: chatId, text: startMsg });
     }
 
@@ -207,16 +217,14 @@ async function handleNotify(env, message) {
     });
   }
 
-  if (env.ENABLE_NOTIFICATION === "true") {
+  if (ENABLE_NOTIFICATION === "true") {
     const lastMsgTime = await nfd.get("lastmsg-" + chatId, { type: "json" });
     const now = Date.now();
-    const interval = parseInt(env.NOTIFY_INTERVAL || "3600000", 10);
+    const interval = parseInt(NOTIFY_INTERVAL || "3600000", 10);
 
     if (!lastMsgTime || now - lastMsgTime > interval) {
       await nfd.put("lastmsg-" + chatId, now);
-      const notifyText = await fetch(env.NOTIFICATION_URL).then((r) =>
-        r.text()
-      );
+      const notifyText = await fetch(NOTIFICATION_URL).then((r) => r.text());
       return sendMessage(env, { chat_id: ADMIN_UID, text: notifyText });
     }
   }
@@ -280,7 +288,7 @@ async function checkBlock(env, message) {
 
 async function registerWebhook(request, env) {
   const url = new URL(request.url);
-  const webhookUrl = `${url.protocol}//${url.hostname}${env.WEBHOOK_PATH}`;
+  const webhookUrl = `${url.protocol}//${url.hostname}${WEBHOOK_PATH}`;
   const r = await fetch(
     apiUrl(env, "setWebhook", {
       url: webhookUrl,
@@ -301,7 +309,7 @@ async function unRegisterWebhook(request, env) {
 // ==================== 骗子检测 ====================
 
 async function isFraud(env, id) {
-  const db = await fetch(env.FRAUD_DB_URL).then((r) => r.text());
+  const db = await fetch(FRAUD_DB_URL).then((r) => r.text());
   const arr = db.split("\n").filter(Boolean);
   return arr.includes(id.toString());
 }
