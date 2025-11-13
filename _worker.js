@@ -150,14 +150,46 @@ async function onMessage(env, message) {
 }
 
 // ==================== 管理员逻辑 ====================
-
 async function handleAdminMessage(env, message) {
   const ADMIN_UID = env.ADMIN_UID;
   const nfd = env.nfd;
 
-  if (message.text === "/block") return handleBlock(env, message);
-  if (message.text === "/unblock") return handleUnBlock(env, message);
-  if (message.text === "/checkblock") return checkBlock(env, message);
+  // ==================== 管理命令 ====================
+
+  // /block
+  if (message.text === "/block") {
+    if (!message.reply_to_message) {
+      return sendMessage(env, {
+        chat_id: ADMIN_UID,
+        text: "❗ 使用方法：请回复要屏蔽的用户消息后发送 /block",
+      });
+    }
+    return handleBlock(env, message);
+  }
+
+  // /unblock
+  if (message.text === "/unblock") {
+    if (!message.reply_to_message) {
+      return sendMessage(env, {
+        chat_id: ADMIN_UID,
+        text: "❗ 使用方法：请回复要解除屏蔽的用户消息后发送 /unblock",
+      });
+    }
+    return handleUnBlock(env, message);
+  }
+
+  // /checkblock
+  if (message.text === "/checkblock") {
+    if (!message.reply_to_message) {
+      return sendMessage(env, {
+        chat_id: ADMIN_UID,
+        text: "❗ 使用方法：请回复要查询的用户消息后发送 /checkblock",
+      });
+    }
+    return checkBlock(env, message);
+  }
+
+  // ==================== 普通管理员回复转发逻辑 ====================
 
   if (!message?.reply_to_message?.chat) {
     return sendMessage(env, {
@@ -177,6 +209,7 @@ async function handleAdminMessage(env, message) {
     message_id: message.message_id,
   });
 }
+
 
 // ==================== 普通用户消息 ====================
 
